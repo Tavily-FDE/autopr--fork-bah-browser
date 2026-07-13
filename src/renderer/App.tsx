@@ -2481,9 +2481,38 @@ Answer with one word: ACTION, PAGE, WEB, or CHAT.`;
                     // agrega ML/Amazon/Magalu/KaBuM), deixa o WEBVIEW renderizar o JS,
                     // e o "scanner" raspa os preços do DOM → tabela ordenada. Sem o
                     // agente clicando. Determinístico → auto-done.
+                    //
+                    // Tavily parallel path: when TAVILY_API_KEY is set, fire a Tavily
+                    // search in parallel with the Google Shopping scrape and merge results.
                     setAgentVisual('acting');
                     const q = action.query;
                     onProgress({ kind: 'status', message: `🛒 Comparing prices for "${q}" — Google Shopping (Mercado Livre, Amazon, Magalu…)…` });
+
+                    // ── Tavily price search (parallel, non-blocking) ──
+                    const tavilyPromise: Promise<Array<{ title: string; price: number; store: string; url: string }>> = (async () => {
+                      try {
+                        const res = await window.electronAPI?.tavilySearch?.(
+                          `${q} price buy`,
+                          { topic: 'general', maxResults: 10, searchDepth: 'advanced' },
+                        );
+                        if (!res?.success || !res.results?.length) return [];
+                        const priceRe = /R?\$\s?([\d.,]+)/;
+                        return (res.results as Array<{ title: string; url: string; content: string }>)
+                          .map(r => {
+                            const m = priceRe.exec(r.content || '');
+                            if (!m) return null;
+                            const raw = m[1].replace(/\./g, '').replace(',', '.');
+                            const price = parseFloat(raw);
+                            if (!price || price <= 0) return null;
+                            let store = '—';
+                            try { store = new URL(r.url).hostname.replace('www.', ''); } catch {}
+                            return { title: r.title || '', price, store, url: r.url || '' };
+                          })
+                          .filter((x): x is { title: string; price: number; store: string; url: string } => !!x);
+                      } catch { return []; }
+                    })();
+
+                    // ── Google Shopping scrape (existing path) ──
                     const shopUrl = `https://www.google.com/search?q=${encodeURIComponent(q)}&udm=28&${googleLocaleParams()}`;
                     const beforeUrl = wv.getURL();
                     await executeBrowserAction(wv, { type: 'navigate', url: shopUrl } as BrowserAction);
@@ -2491,18 +2520,35 @@ Answer with one word: ACTION, PAGE, WEB, or CHAT.`;
                     await waitForSettle(wv, { maxMs: 4000, minMs: 300 });   // espera o Shopping ASSENTAR (não tempo fixo)
                     let items: Array<{ title: string; price: number; store: string; url: string }> = [];
                     try { items = await withTimeout(wv.executeJavaScript(PRICE_EXTRACTOR_JS, false), 9000, [] as any); } catch { /* página hostil */ }
-                    const valid = (items || []).filter(x => x && x.price > 0 && x.title);
-                    if (valid.length >= 2) {
-                      const sorted = valid.sort((a, b) => a.price - b.price).slice(0, 30);
+
+                    // ── Merge Tavily + Google Shopping results ──
+                    const tavilyItems = await tavilyPromise;
+                    const allItems = [...(items || []), ...tavilyItems];
+                    const valid = allItems.filter(x => x && x.price > 0 && x.title);
+                    // Deduplicate by URL
+                    const seen = new Set<string>();
+                    const deduped = valid.filter(x => {
+                      const key = x.url || x.title;
+                      if (seen.has(key)) return false;
+                      seen.add(key);
+                      return true;
+                    });
+                    const sources: string[] = [];
+                    if ((items || []).filter(x => x && x.price > 0).length) sources.push('Google Shopping');
+                    if (tavilyItems.length) sources.push('Tavily');
+                    const sourceLabel = sources.join(' + ') || 'Google Shopping';
+
+                    if (deduped.length >= 2) {
+                      const sorted = deduped.sort((a, b) => a.price - b.price).slice(0, 30);
                       const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                       const spec = {
                         title: `Prices: ${q}`,
-                        subtitle: 'Google Shopping (Mercado Livre, Amazon, Magalu, KaBuM and more) — sorted cheapest first',
+                        subtitle: `${sourceLabel} (Mercado Livre, Amazon, Magalu, KaBuM and more) — sorted cheapest first`,
                         columns: ['Product', 'Price (R$)', 'Store'],
                         rows: sorted.map(x => [x.title, fmt(x.price), x.store || '—']),
                         links: sorted.map(x => x.url || undefined),
                         chart: { type: 'bar' as const, label: 'Price (R$)', labels: sorted.slice(0, 12).map(x => x.title.slice(0, 22)), values: sorted.slice(0, 12).map(x => x.price) },
-                        sourceNote: `Source: Google Shopping — ${new Date().toLocaleString('pt-BR')}. Prices vary; confirm on the store before buying.`,
+                        sourceNote: `Source: ${sourceLabel} — ${new Date().toLocaleString('pt-BR')}. Prices vary; confirm on the store before buying.`,
                       };
                       const rv = await window.electronAPI?.renderView?.(spec);
                       if (rv?.success && rv.url) {

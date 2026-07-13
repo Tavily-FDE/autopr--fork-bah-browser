@@ -133,6 +133,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Resolve o caminho real de um arquivo arrastado (File → path) no Electron 33.
   getPathForFile: (file: File) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
   stockMovers: (direction: string, count?: number) => ipcRenderer.invoke('stocks:movers', direction, count),
+  tavilySearch: (query: string, opts?: { topic?: string; maxResults?: number; searchDepth?: string; includeDomains?: string[] }) =>
+    ipcRenderer.invoke('tavily:search', query, opts),
   onVideoProgress: (cb: (p: { state: string; percent?: number; title?: string; path?: string; error?: string; speed?: string; eta?: string }) => void) => {
     const listener = (_e: any, p: any) => cb(p);
     ipcRenderer.on('agent:video-progress', listener);

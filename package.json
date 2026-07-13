@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
+    "@tavily/core": "^0.6.1",
     "@ghostery/adblocker-electron": "^2.18.1",
     "cross-fetch": "^4.1.0",
     "electron-updater": "^6.8.9",
