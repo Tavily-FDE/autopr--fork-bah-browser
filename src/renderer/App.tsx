@@ -105,7 +105,7 @@ declare global {
       pickDocument?: () => Promise<{ ok: boolean; name?: string; text?: string; error?: string } | null>;
       getPathForFile?: (file: File) => string;
       stockMovers?: (direction: string, count?: number) => Promise<{ success: boolean; spec?: any; error?: string }>;
-      tavilySearch?: (query: string, opts?: { topic?: string; maxResults?: number; searchDepth?: string; includeDomains?: string[] }) => Promise<{ success: boolean; results?: any[]; error?: string }>;
+      tavilySearch?: (query: string, opts?: { topic?: string; maxResults?: number; searchDepth?: string; timeRange?: string; includeDomains?: string[] }) => Promise<{ success: boolean; results?: any[]; error?: string }>;
       onVideoProgress?: (cb: (p: { state: string; percent?: number; title?: string; path?: string; error?: string; speed?: string; eta?: string }) => void) => void;
       adblockGetState?: () => Promise<{ enabled: boolean; active: boolean; bypassedHosts: string[] }>;
       adblockSetEnabled?: (on: boolean) => Promise<{ enabled: boolean }>;

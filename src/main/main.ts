@@ -1630,6 +1630,26 @@ function setupIPC(): void {
     }
   });
 
+  // ═══ Tavily search: structured web search via Tavily API ═══
+  ipcMain.handle('tavily:search', async (_e, query: string, opts?: { topic?: string; maxResults?: number; searchDepth?: string; timeRange?: string; includeDomains?: string[] }) => {
+    try {
+      const apiKey = process.env.TAVILY_API_KEY;
+      if (!apiKey) return { success: false, error: 'TAVILY_API_KEY not set' };
+      const { tavily } = await import('@tavily/core');
+      const client = tavily({ apiKey });
+      const res = await client.search(query, {
+        topic: (opts?.topic as 'general' | 'news' | 'finance') || 'general',
+        maxResults: opts?.maxResults || 5,
+        searchDepth: (opts?.searchDepth as 'basic' | 'advanced') || 'basic',
+        ...(opts?.timeRange ? { timeRange: opts.timeRange as 'day' | 'week' | 'month' | 'year' } : {}),
+        ...(opts?.includeDomains?.length ? { includeDomains: opts.includeDomains } : {}),
+      });
+      return { success: true, results: res.results };
+    } catch (e: any) {
+      return { success: false, error: String(e?.message ?? e) };
+    }
+  });
+
   // ═══ Video cuts: onde uma frase é DITA em vídeos do YouTube (Filmot → legendas) ═══
   ipcMain.handle('videocuts:search', async (_e, phrase: string, count?: number) => {
     try {
